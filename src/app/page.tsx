@@ -1,95 +1,73 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+import { useRouter } from 'next/navigation';
+import styles from './page.module.css';
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const router = useRouter();
 
+  return (
+    <div className={styles.landingContainer}>
+      <section className={styles.hero}>
+        <h1>Welcome to Railway Booking System</h1>
+        <p className={styles.subtitle}>Book your train tickets easily and securely</p>
         <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => router.push('/search')}
+            className={`${styles.button} ${styles.primary}`}
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
+            Search Trains
+          </button>
+          <button
+            onClick={() => router.push('/login')}
+            className={`${styles.button} ${styles.secondary}`}
           >
-            Read our docs
-          </a>
+            Login to Book
+          </button>
         </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </section>
+
+      <section className={styles.features}>
+        <h2>Why Choose Us?</h2>
+        <div className={styles.featureGrid}>
+          <div className={styles.feature}>
+            <h3>Easy Booking</h3>
+            <p>Book your tickets in just a few clicks</p>
+          </div>
+          <div className={styles.feature}>
+            <h3>Secure Payments</h3>
+            <p>Multiple secure payment options available</p>
+          </div>
+          <div className={styles.feature}>
+            <h3>Real-time Availability</h3>
+            <p>Check seat availability instantly</p>
+          </div>
+          <div className={styles.feature}>
+            <h3>Digital Tickets</h3>
+            <p>Get e-tickets directly on your device</p>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.howItWorks}>
+        <h2>How It Works</h2>
+        <div className={styles.steps}>
+          <div className={styles.step}>
+            <div className={styles.stepNumber}>1</div>
+            <h3>Search</h3>
+            <p>Enter your journey details</p>
+          </div>
+          <div className={styles.step}>
+            <div className={styles.stepNumber}>2</div>
+            <h3>Select</h3>
+            <p>Choose your preferred train and class</p>
+          </div>
+          <div className={styles.step}>
+            <div className={styles.stepNumber}>3</div>
+            <h3>Book</h3>
+            <p>Complete your booking securely</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
