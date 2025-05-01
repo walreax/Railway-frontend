@@ -25,8 +25,9 @@ export default function NewBooking() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [trainDetails, setTrainDetails] = useState<TrainDetails | null>(null);
+  const [fetchRetried, setFetchRetried] = useState(false);
 
   const [formData, setFormData] = useState({
     trainId: searchParams.get('trainId') || '',
@@ -38,27 +39,75 @@ export default function NewBooking() {
     paymentMethod: 'wallet'
   });
 
-  // Fetch train details on load
+  // Fetch train details on load with a retry mechanism
   useEffect(() => {
     const fetchTrainDetails = async () => {
-      if (!formData.trainId) return;
+      if (!formData.trainId) {
+        setError('Missing train ID');
+        setLoading(false);
+        return;
+      }
+      
+      if (!formData.fromStation || !formData.toStation || !formData.journeyDate) {
+        setError('Missing journey details');
+        setLoading(false);
+        return;
+      }
 
+      setLoading(true);
       try {
-        const response = await fetch(`/api/trains/${formData.trainId}?date=${formData.journeyDate}`);
+        // Add query parameters for source and destination stations
+        const queryParams = new URLSearchParams({
+          date: formData.journeyDate,
+          from: formData.fromStation,
+          to: formData.toStation
+        });
+        
+        // Set a timeout to abort the fetch if it takes too long
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        const response = await fetch(
+          `/api/trains/${formData.trainId}?${queryParams.toString()}`,
+          { signal: controller.signal }
+        );
+        
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch train details: ${response.status}`);
+        }
+        
         const data = await response.json();
 
-        if (response.ok) {
-          setTrainDetails(data);
-        } else {
-          setError('Failed to fetch train details');
+        if (!data.coachDetails || data.coachDetails.length === 0) {
+          throw new Error('No coach details available');
+        }
+
+        setTrainDetails(data);
+        
+        // Set default coach type if not already set
+        if (!formData.coachType && data.coachDetails.length > 0) {
+          setFormData(prev => ({ ...prev, coachType: data.coachDetails[0].type }));
         }
       } catch (err) {
-        setError('Failed to load train details');
+        console.error('Error fetching train details:', err);
+        if (!fetchRetried) {
+          // Wait 2 seconds and try one more time
+          setTimeout(() => {
+            setFetchRetried(true);
+            fetchTrainDetails();
+          }, 2000);
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to load train details. Please try again.');
+        }
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchTrainDetails();
-  }, [formData.trainId, formData.journeyDate]);
+  }, [formData.trainId, formData.fromStation, formData.toStation, formData.journeyDate, fetchRetried]);
 
   const handleAddPassenger = () => {
     if (formData.passengers.length >= 6) {
@@ -133,7 +182,7 @@ export default function NewBooking() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.UserID // Updated to match the field name from login response
+          'x-user-id': user.UserID
         },
         body: JSON.stringify({
           ...formData,
@@ -158,7 +207,7 @@ export default function NewBooking() {
     }
   };
 
-  if (!trainDetails) {
+  if (loading) {
     return (
       <div className={styles.container}>
         <div className={styles.bookingCard}>
@@ -166,6 +215,54 @@ export default function NewBooking() {
           <div className={styles.loading}>
             <div className={styles.loadingSpinner} />
             <p>Fetching train details...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !trainDetails) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.bookingCard}>
+          <h1>Book Train Tickets</h1>
+          <div className={styles.errorSection}>
+            <p className={styles.error}>{error}</p>
+            <button 
+              onClick={() => {
+                setFetchRetried(false);
+                setError('');
+                setLoading(true);
+              }} 
+              className={styles.retryButton}
+            >
+              Retry
+            </button>
+            <button 
+              onClick={() => router.push('/search')} 
+              className={styles.backButton}
+            >
+              Back to Search
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!trainDetails) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.bookingCard}>
+          <h1>Book Train Tickets</h1>
+          <div className={styles.errorSection}>
+            <p className={styles.error}>Could not load train details</p>
+            <button 
+              onClick={() => router.push('/search')} 
+              className={styles.backButton}
+            >
+              Back to Search
+            </button>
           </div>
         </div>
       </div>
@@ -318,7 +415,7 @@ export default function NewBooking() {
                   name="paymentMethod"
                   value="wallet"
                   checked={formData.paymentMethod === 'wallet'}
-                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value as any }))}
                 />
                 <span>Wallet</span>
               </label>
@@ -328,7 +425,7 @@ export default function NewBooking() {
                   name="paymentMethod"
                   value="card"
                   checked={formData.paymentMethod === 'card'}
-                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value as any }))}
                 />
                 <span>Credit/Debit Card</span>
               </label>
@@ -338,7 +435,7 @@ export default function NewBooking() {
                   name="paymentMethod"
                   value="upi"
                   checked={formData.paymentMethod === 'upi'}
-                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  onChange={e => setFormData(prev => ({ ...prev, paymentMethod: e.target.value as any }))}
                 />
                 <span>UPI</span>
               </label>

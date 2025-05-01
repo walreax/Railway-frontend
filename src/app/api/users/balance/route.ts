@@ -18,15 +18,16 @@ export async function GET(request: Request) {
 
   try {
     const [rows] = await connection.execute(
-      'SELECT WalletBalance FROM Users WHERE UserID = ?',
+      'SELECT Balance as WalletBalance FROM EWallet WHERE UserID = ?',
       [userId]
     );
 
     if (Array.isArray(rows) && rows.length > 0) {
       return NextResponse.json({ balance: (rows[0] as any).WalletBalance });
     }
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Wallet not found for this user' }, { status: 404 });
   } catch (error) {
+    console.error('Error fetching wallet balance:', error);
     return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 });
   } finally {
     await connection.end();

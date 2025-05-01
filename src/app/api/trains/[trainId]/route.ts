@@ -1,113 +1,99 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getConnection } from '@/utils/db';
-import { RowDataPacket } from 'mysql2';
-
-interface TrainResult extends RowDataPacket {
-  TrainID: number;
-  TrainNumber: string;
-  TrainName: string;
-  FromStation: string;
-  ToStation: string;
-  DepartureTime: string;
-  ArrivalTime: string;
-  Distance: number;
-  RunningDays: string;
-  SLAvailable: number;
-  ACThreeAvailable: number;
-  ACTwoAvailable: number;
-  ACOneAvailable: number;
-  BaseFare: number;
-}
+import { NextResponse } from 'next/server';
+import { createConnection } from 'mysql2/promise';
 
 export async function GET(
-  req: NextRequest,
+  request: Request,
   { params }: { params: { trainId: string } }
 ) {
+  const { searchParams } = new URL(request.url);
+  const date = searchParams.get('date');
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+
+  if (!date || !from || !to) {
+    return NextResponse.json(
+      { error: 'Missing required parameters: date, from, to' },
+      { status: 400 }
+    );
+  }
+
+  const trainId = params.trainId;
+
   try {
-    const { trainId } = params;
-    const searchParams = new URL(req.url).searchParams;
-    const date = searchParams.get('date');
-    const fromStation = searchParams.get('from');
-    const toStation = searchParams.get('to');
-
-    if (!date || !fromStation || !toStation) {
-      return NextResponse.json(
-        { error: 'Date, source and destination stations are required' },
-        { status: 400 }
-      );
-    }
-
-    const connection = await getConnection();
+    const connection = await createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'Railway_DB',
+    });
 
     try {
-      // Get train details with coach availability for the specific journey
-      const [results] = await connection.execute<TrainResult[]>(
-        'CALL sp_GetTrainAvailabilityDetails(?, ?, ?, ?)',
-        [trainId, fromStation, toStation, date]
+      // Get basic train information
+      const [trainResults] = await connection.execute<any[]>(
+        `SELECT 
+          t.TrainID, t.TrainNumber, t.TrainName,
+          origin.StationName as FromStation,
+          origin.DepartureTime,
+          dest.StationName as ToStation,
+          dest.ArrivalTime,
+          dest.Distance - origin.Distance as Distance
+        FROM Trains t
+        JOIN TrainSchedule ts ON t.TrainID = ts.TrainID
+        JOIN TrainStops origin ON ts.ScheduleID = origin.ScheduleID
+        JOIN TrainStops dest ON ts.ScheduleID = dest.ScheduleID
+        WHERE t.TrainID = ?
+          AND origin.StationName = ?
+          AND dest.StationName = ?
+          AND origin.StopNumber < dest.StopNumber
+          AND ts.Status = 'active'`,
+        [trainId, from, to]
       );
 
-      if (!results[0]?.length) {
+      if (trainResults.length === 0) {
         return NextResponse.json(
-          { error: 'Train not found or not available for selected route/date' },
+          { error: 'Train not found or not available for the selected route' },
           { status: 404 }
         );
       }
 
-      const trainDetails = results[0][0];
-      const totalAvailable = (trainDetails.SLAvailable || 0) + 
-                           (trainDetails.ACThreeAvailable || 0) + 
-                           (trainDetails.ACTwoAvailable || 0) + 
-                           (trainDetails.ACOneAvailable || 0);
+      const train = trainResults[0];
 
-      let availabilityStatus: 'high' | 'medium' | 'low';
-      if (totalAvailable > 50) {
-        availabilityStatus = 'high';
-      } else if (totalAvailable > 20) {
-        availabilityStatus = 'medium';
-      } else {
-        availabilityStatus = 'low';
-      }
+      // Get coach details with availability
+      const [coachResults] = await connection.execute<any[]>(
+        `SELECT 
+          c.CoachType,
+          COUNT(CASE WHEN s.IsAvailable = 1 THEN 1 END) as AvailableSeats,
+          ROUND(c.BaseFare * ? / 100, 2) as Fare
+        FROM Coaches c
+        LEFT JOIN Seats s ON c.CoachID = s.CoachID 
+          AND s.JourneyDate = ? 
+          AND s.ScheduleID = (
+            SELECT ScheduleID FROM TrainSchedule WHERE TrainID = ? LIMIT 1
+          )
+        WHERE c.TrainID = ?
+        GROUP BY c.CoachType, c.BaseFare`,
+        [train.Distance, date, trainId, trainId]
+      );
 
-      // Format the response
-      const formattedResponse = {
-        trainId: trainDetails.TrainID,
-        trainNumber: trainDetails.TrainNumber,
-        trainName: trainDetails.TrainName,
-        fromStation: trainDetails.FromStation,
-        toStation: trainDetails.ToStation,
-        departureTime: trainDetails.DepartureTime?.slice(0, 5),
-        arrivalTime: trainDetails.ArrivalTime?.slice(0, 5),
-        duration: calculateDuration(trainDetails.DepartureTime, trainDetails.ArrivalTime),
-        distance: trainDetails.Distance,
-        runningDays: trainDetails.RunningDays?.split(','),
-        coaches: [
-          {
-            type: 'SL',
-            available: trainDetails.SLAvailable,
-            fare: Math.round(trainDetails.BaseFare * 1.0)
-          },
-          {
-            type: '3A',
-            available: trainDetails.ACThreeAvailable,
-            fare: Math.round(trainDetails.BaseFare * 1.75)
-          },
-          {
-            type: '2A',
-            available: trainDetails.ACTwoAvailable,
-            fare: Math.round(trainDetails.BaseFare * 2.5)
-          },
-          {
-            type: '1A',
-            available: trainDetails.ACOneAvailable,
-            fare: Math.round(trainDetails.BaseFare * 3.5)
-          }
-        ].filter(coach => coach.available > 0), // Only include coaches with available seats
-        availabilityStatus
+      const trainDetails = {
+        trainId: train.TrainID,
+        trainNumber: train.TrainNumber,
+        trainName: train.TrainName,
+        fromStation: train.FromStation,
+        toStation: train.ToStation,
+        departureTime: train.DepartureTime,
+        arrivalTime: train.ArrivalTime,
+        distance: train.Distance,
+        coachDetails: coachResults.map(coach => ({
+          type: coach.CoachType,
+          availableSeats: coach.AvailableSeats || 0,
+          fare: Math.round(coach.Fare) // Round to nearest integer
+        }))
       };
 
-      return NextResponse.json(formattedResponse);
+      return NextResponse.json(trainDetails);
     } finally {
-      connection.release();
+      await connection.end();
     }
   } catch (error) {
     console.error('Error fetching train details:', error);
@@ -116,20 +102,4 @@ export async function GET(
       { status: 500 }
     );
   }
-}
-
-function calculateDuration(departure: string, arrival: string): string {
-  const departureTime = new Date(`1970-01-01T${departure}`);
-  const arrivalTime = new Date(`1970-01-01T${arrival}`);
-  
-  // Handle cases where arrival is next day
-  if (arrivalTime < departureTime) {
-    arrivalTime.setDate(arrivalTime.getDate() + 1);
-  }
-
-  const diff = arrivalTime.getTime() - departureTime.getTime();
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-  return `${hours}h ${minutes}m`;
 }

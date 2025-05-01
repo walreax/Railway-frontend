@@ -199,7 +199,16 @@ export default function Search() {
       return;
     }
 
-    const params = new URLSearchParams(bookingData);
+    // Convert all values to strings for URLSearchParams
+    const stringifiedData: Record<string, string> = {
+      trainId: train.trainId.toString(),
+      date: searchData.journeyDate,
+      from: searchData.fromStation,
+      to: searchData.toStation,
+      class: selectedCoach.type
+    };
+
+    const params = new URLSearchParams(stringifiedData);
     router.push(`/bookings/new?${params.toString()}`);
   };
 
